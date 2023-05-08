@@ -1,0 +1,848 @@
+
+
+
+---
+- hosts: all
+  become: yes
+  tasks: 
+    - name: create the k8 - admin user 
+      user: 
+        name: k8
+        append: yes 
+        state: present
+        createhome: yes 
+        shell: /bin/bash 
+
+    - name: allow k8 user sudo permission 
+      lineinfile: 
+        dest: /etc/sudoers 
+        line: 'k8 ALL=(ALL:ALL) NOPASSWD: ALL'    
+        validate: 'visudo -cf %s'
+
+    - name: set authorized keys for the k8 user 
+      authorized_key: 
+        user: k8
+        key: "{{ item }}"
+      with_file: 
+        - ~/.ssh/id_rsa.pub 
+---
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: yes
+
+  tasks:
+     - name: Create CRI-O config file
+       file:
+         path: "/etc/modules-load.d/crio.conf"
+         state: "touch"
+
+     - name: add modules in conf file
+       blockinfile:
+         path: "/etc/modules-load.d/crio.conf"
+         block: |
+            overlay
+            br_netfilter
+
+     - name: Enable sysctl params
+       file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+
+     - name: add configuration
+       blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+
+     - name: enable overlayFS & VxLan pod communication
+       shell: |
+               sudo modprobe overlay
+               sudo modprobe br_netfilter
+     - name: Reload parameters
+       command: sudo sysctl --system
+
+     - name: disable swap
+       shell: |
+               sudo swapoff -a
+               sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+     - name: enable cri-repo
+       environment:
+          OS: xUbuntu_20.04
+          VERSION: 1.23
+       shell: |
+                echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+                echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+
+                curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+                curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+     - name: Install cri-o and cri-o tools
+       shell: |
+               sudo apt-get update
+               sudo apt-get install cri-o cri-o-runc cri-tools -y
+               sudo systemctl daemon-reload
+               sudo systemctl enable crio --now
+
+     - name: Install dependencies
+       shell: |
+               sudo apt-get update
+               sudo apt-get install -y apt-transport-https curl
+               curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+     - name: Create kubernetes repo file
+       file:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         state: "touch"
+
+     - name: Add K8s Source
+       blockinfile:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         block: |
+               deb https://apt.kubernetes.io/ kubernetes-xenial main
+
+  
+     - name: install kubernetes 
+       shell: | 
+         sudo apt update 
+         sudo apt install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
+         sudo apt-mark hold kubelet kubeadm kubectl 
+
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: initialize the cluster
+      shell: sudo kubeadm init --pod-network-cidr=192.168.0.0/16  --cri-socket=/var/run/crio/crio.sock  --ignore-preflight-errors Swap >> cluster_initialized.txt
+      args:
+        chdir: $HOME
+        creates: cluster_initialized.txt
+
+    - name: create .kube directory
+      become: yes
+      become_user: k8
+      file:
+        path: /home/k8/.kube
+        state: directory
+        mode: 0755
+
+    - name: copy admin.conf
+      copy:
+        remote_src: yes
+        src: /etc/kubernetes/admin.conf
+        dest: /home/k8/.kube/config
+        owner: k8
+
+    - name: Install calico Pod network
+      become: yes
+      become_user: k8
+      shell:  kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      args:
+        chdir: $HOME
+
+
+    - name: Get join token
+      become: yes
+      become_user: k8
+      shell: sudo kubeadm token create  --print-join-command
+      register: kubernetes_join_command
+
+    - name: Copy join command to local file.
+      become: yes
+      local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}" dest="/tmp/kubernetes_join_command" mode=0777  ".
+
+#########################################################################################################"
+//# KUBERNETES INSTALL USING ANSIBLE PLAYBOOKS USING KUBERNETES CLUSTER SETUP USING ANSIBLE PLAYBOOKS  SUCCESS ANSIBLE PLAYBOOKS FOR K8 CLUSTER SETUP USING ANSIBLE PLAYBOOKS
+---
+- hosts: all
+  become: yes
+  tasks: 
+    - name: create the k8 - admin user 
+      user: 
+        name: k8
+        append: yes 
+        state: present
+        createhome: yes 
+        shell: /bin/bash 
+
+    - name: allow k8 user sudo permission 
+      lineinfile: 
+        dest: /etc/sudoers 
+        line: 'k8 ALL=(ALL:ALL) NOPASSWD: ALL'    
+        validate: 'visudo -cf %s'
+
+    - name: set authorized keys for the k8 user 
+      authorized_key: 
+        user: k8
+        key: "{{ item }}"
+      with_file: 
+        - ~/.ssh/id_rsa.pub
+
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: yes
+
+  tasks:
+     - name: Create CRI-O config file
+       file:
+         path: "/etc/modules-load.d/crio.conf"
+         state: "touch"
+
+     - name: add modules in conf file
+       blockinfile:
+         path: "/etc/modules-load.d/crio.conf"
+         block: |
+            overlay
+            br_netfilter
+
+     - name: Enable sysctl params
+       file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+
+     - name: add configuration
+       blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+
+     - name: enable overlayFS & VxLan pod communication
+       shell: |
+               sudo modprobe overlay
+               sudo modprobe br_netfilter
+     - name: Reload parameters
+       command: sudo sysctl --system
+
+     - name: disable swap
+       shell: |
+               sudo swapoff -a
+               sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+     - name: enable cri-repo
+       environment:
+          OS: xUbuntu_20.04
+          VERSION: 1.23
+       shell: |
+                echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+                echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+
+                curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+                curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+     - name: Install cri-o and cri-o tools
+       shell: |
+               sudo apt-get update
+               sudo apt-get install cri-o cri-o-runc cri-tools -y
+               sudo systemctl daemon-reload
+               sudo systemctl enable crio --now
+
+     - name: Install dependencies
+       shell: |
+               sudo apt-get update
+               sudo apt-get install -y apt-transport-https curl
+               curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+     - name: Create kubernetes repo file
+       file:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         state: "touch"
+
+     - name: Add K8s Source
+       blockinfile:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         block: |
+               deb https://apt.kubernetes.io/ kubernetes-xenial main
+
+  
+     - name: install kubernetes 
+       shell: | 
+         sudo apt update 
+         sudo apt install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
+         sudo apt-mark hold kubelet kubeadm kubectl 
+
+
+- hosts: all
+  become: yes
+  tasks:
+    - name: initialize the cluster
+      shell: sudo kubeadm init --pod-network-cidr=192.168.0.0/16  --cri-socket=/var/run/crio/crio.sock  --ignore-preflight-errors Swap >> cluster_initialized.txt
+      args:
+        chdir: $HOME
+        creates: cluster_initialized.txt
+
+    - name: create .kube directory
+      become: yes
+      become_user: k8
+      file:
+        path: /home/k8/.kube
+        state: directory
+        mode: 0755
+
+    - name: copy admin.conf
+      copy:
+        remote_src: yes
+        src: /etc/kubernetes/admin.conf
+        dest: /home/k8/.kube/config
+        owner: k8
+
+    - name: Install calico Pod network
+      become: yes
+      become_user: k8
+      shell:  kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+      args:
+        chdir: $HOME
+
+
+    - name: Get join token
+      become: yes
+      become_user: k8
+      shell: sudo kubeadm token create  --print-join-command
+      register: kubernetes_join_command
+
+    - name: Copy join command to local file.
+      become: yes
+      local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}" dest="/tmp/kubernetes_join_command" mode=0777
+
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.45]
+
+TASK [create the k8 - admin user] **********************************************
+[WARNING]: 'append' is set, but no 'groups' are specified. Use 'groups' for
+appending new groups.This will change to an error in Ansible 2.14.
+ok: [192.168.122.45]
+
+TASK [allow k8 user sudo permission] *******************************************
+ok: [192.168.122.45]
+
+TASK [set authorized keys for the k8 user] *************************************
+ok: [192.168.122.45] => (item=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9)
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.45]
+
+TASK [Create CRI-O config file] ************************************************
+changed: [192.168.122.45]
+
+TASK [add modules in conf file] ************************************************
+ok: [192.168.122.45]
+
+TASK [Enable sysctl params] ****************************************************
+changed: [192.168.122.45]
+
+TASK [add configuration] *******************************************************
+ok: [192.168.122.45]
+
+TASK [enable overlayFS & VxLan pod communication] ******************************
+changed: [192.168.122.45]
+
+TASK [Reload parameters] *******************************************************
+changed: [192.168.122.45]
+
+TASK [disable swap] ************************************************************
+changed: [192.168.122.45]
+
+TASK [enable cri-repo] *********************************************************
+changed: [192.168.122.45]
+
+TASK [Install cri-o and cri-o tools] *******************************************
+changed: [192.168.122.45]
+
+TASK [Install dependencies] ****************************************************
+changed: [192.168.122.45]
+
+TASK [Create kubernetes repo file] *********************************************
+changed: [192.168.122.45]
+
+TASK [Add K8s Source] **********************************************************
+ok: [192.168.122.45]
+
+TASK [install kubernetes] ******************************************************
+changed: [192.168.122.45]
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.45]
+
+TASK [initialize the cluster] **************************************************
+ok: [192.168.122.45]
+
+TASK [create .kube directory] **************************************************
+ok: [192.168.122.45]
+
+TASK [copy admin.conf] *********************************************************
+ok: [192.168.122.45]
+
+TASK [Install calico Pod network] **********************************************
+changed: [192.168.122.45]
+
+TASK [Get join token] **********************************************************
+changed: [192.168.122.45]
+
+TASK [Copy join command to local file.] ****************************************
+changed: [192.168.122.45 -> localhost]
+
+PLAY RECAP *********************************************************************
+192.168.122.45             : ok=25   changed=13   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+k8@lan:~$ cd .kube/
+k8@lan:~/.kube$ ll
+total 20
+drwxr-xr-x 3 k8 k8   4096 May  8 17:07 ./
+drwxr-xr-x 5 k8 k8   4096 May  8 17:06 ../
+drwxr-x--- 3 k8 k8   4096 May  8 17:07 cache/
+-rw-r--r-- 1 k8 root 5638 May  8 17:06 config
+k8@lan:~/.kube$ kubectl get nodes 
+NAME   STATUS   ROLES                  AGE     VERSION
+lan    Ready    control-plane,master   7m23s   v1.23.1
+\/\/\\##################################################/\/\\/\//\//////\//////////\/\\/\//\//\/\/\/\/\\\\/\\\\/\//\/\/\\/\/\/\/\/\/\/\/
+https://www.checkmateq.com/blog/ansible-kubernetes/
+
+crio.conf Container Runtime Interface (CRI)  - configuration file of the CRI-O OCI Kubernetes Container Runtime daemon
+OCI-based implementation of Kubernetes Container Runtime Interface Daemon
+
+crio is meant to provide an integration path between OCI conformant runtimes and the kubelet. Specifically, it implements the Kubelet Container Runtime Interface (CRI) using OCI conformant runtimes. The scope of crio is tied to the scope of the CRI.
+
+    Support multiple image formats including the existing Docker and OCI image formats.
+    Support for multiple means to download images including trust & image verification.
+    Container image management (managing image layers, overlay filesystems, etc).
+    Container process lifecycle management.
+    Monitoring and logging required to satisfy the CRI.
+    Resource isolation as required by the CRI.
+
+Usage:
+
+crio [GLOBAL OPTIONS] command [COMMAND OPTIONS] [ARGUMENTS...]
+
+What is CRI-O?  OCI (Open Container Initiative)
+
+CRI-O is an implementation of the Kubernetes CRI (Container Runtime Interface) to enable using OCI (Open Container Initiative) compatible runtimes. It is a lightweight alternative to using Docker as the runtime for kubernetes. It allows Kubernetes to use any OCI-compliant runtime as the container runtime for running pods. Today it supports runc and Kata Containers as the container runtimes but any OCI-conformant runtime can be plugged in principle.
+
+CRI-O supports OCI container images and can pull from any container registry. It is a lightweight alternative to using Docker, Moby or rkt as the runtime for Kubernetes.
+
+2.3.5.3 br_netfilter Module
+
+The Platform CLI checks whether the br_netfilter module is loaded and exits if it is not available. This module is required to enable transparent masquerading and to facilitate Virtual Extensible LAN (VxLAN) traffic for communication between Kubernetes pods across the cluster. If you need to check whether it is loaded, run:
+
+$ sudo lsmod|grep br_netfilter
+br_netfilter           24576  0 
+bridge                155648  2 br_netfilter,ebtable_broute
+
+If you see the output similar to shown, the br_netfilter module is loaded. Kernel modules are usually loaded as they are needed, and it is unlikely that you need to load this module manually. If necessary, you can load the module manually and add it as a permanent module by running:
+
+$ sudo modprobe br_netfilter
+$ sudo sh -c 'echo "br_netfilter" > /etc/modules-load.d/br_netfilter.conf'
+
+I know insmod and modprobe are used to insert module into the kernel
+https://phoenixnap.com/kb/modprobe-command
+Introduction
+        sudo  modprobe overlay
+        sudo modprobe br_netfilter
+
+The Linux kernel has a modular design. Functionality is extendible with modules or drivers. Use the modprobe command to add or remove modules on Linux. The command works intelligently and adds any dependent modules automatically.
+
+The modprobe command searches through the standard installed module directories to find the necessary drivers.
+
+sudo modprobe <options> <module name>
+
+sudo modprobe <options> -a <first module name> <second module name>
+
+So, modprobe loads the main module and the dependent module. But if insmod is used, it won't load the dependency, and hence it will give compilation errors like Unresolved symbols . In this case, we have to manually look for dependent module and need to load them in order to resolve the errors.
+Modprobe :
+
+A loadable kernel module can be added to the Linux kernel or removed from the kernel using the modprobe tool, which was created by Rusty Russell. It is frequently used in an indirect manner since udev uses modprobe to load drivers for hardware that is automatically recognised.
+
+The primary module and the dependent module are loaded via modprobe. In addition to loading the desired module, insmod also loads any additional modules that it detects as being necessary. However, in order to load custom modules from the current directory, you will still require insmod since modprobe only searches the loaded module directories that come standard. In contrast, modprobe is typically used by sysadmins or in a production system. Modprobe is an intelligent command that analyses the modules.dep file to load dependencies first before loading the specified module. In the same way as a package manager does, it automatically manages module dependencies:
+
+$ modprobe module-name 
+The br_netfilter module is required to enable transparent masquerading and to facilitate Virtual Extensible LAN (VxLAN) traffic for communication between Kubernetes pods across the cluster nodes
+======================
+What is Linux Swap?
+
+The Linux Kernel divides RAM into chunks of memories and the swapping process is when the Linux Kernel uses a hard disk space (swap space) to store information from RAM and thus releases some RAM space. That is why when you install a Linux distribution, the installation wizard usually asks you to assign some space for the system and another for the swap.
+
+Using swap is a very useful way to extend the RAM because it provides the necessary additional memory when the RAM space has been exhausted and a process has to be continued. It is especially recommended when you have less than 1Gb of RAM. Although in the end, everything depends on you.
+Do you need Linux Swap?
+
+This is a question many novice users ask themselves when they begin to discover Linux. In fact, this will depend on the use and amount of RAM your computer has. Regarding the use, there are processes and applications that really use a lot of memory, for example, Google Chrome. However, most of the current equipment comes with at least 8Gb of RAM and that makes the swap process less necessary. Nevertheless, having a swap space is desirable even if you have a lot of RAM.
+
+For example, usually, when your RAM gets full and the Linux kernel has no space to write into, your system will crash. On the other hand, if you have a swap space, it will be used by the Linux kernel and your system will keep working, though much slower. So, it is safer to have swap space.
+
+Container Runtimes
+Note: Dockershim has been removed from the Kubernetes project as of release 1.24. Read the Dockershim Removal FAQ for further details.
+
+You need to install a container runtime into each node in the cluster so that Pods can run there. This page outlines what is involved and describes related tasks for setting up nodes.
+
+Kubernetes 1.27 requires that you use a runtime that conforms with the Container Runtime Interface (CRI).
+
+See CRI version support for more information.
+
+This page provides an outline of how to use several common container runtimes with Kubernetes.
+
+    containerd
+    CRI-O
+    Docker Engine
+    Mirantis Container Runtime
+================
+apt-transport-https
+DESCRIPTION. This APT transport allows the use of repositories accessed via the HTTP Secure protocol (HTTPS), also referred to as HTTP over TLS. It is available by default since apt 1.5 and was available before that in the package apt-transport-https.
+GNU's Not Unix
+The GNU Privacy Guard (GPG or gpg) tool is a native/baseos security tool for encrypting files. According to the gpg man page: gpg is the OpenPGP (Pretty Good Privacy) part of the GNU Privacy Guard (GnuPG). It is a tool to provide digital encryption and signing services using the OpenPGP standard.
+
+GNU stands for “GNU's Not Unix.” It is pronounced as one syllable with a hard g. Richard Stallman made the Initial Announcement of the GNU Project in September 1983. A longer version called the GNU Manifesto was published in March 1985.
+
+License: GNU GPL, GNU LGPL, GNU AGPL, GNU FDL, GNU FSDG
+
+GNU is different from Unix in several ways. One key difference is that GNU uses the GNU General Public License (GPL), while Unix is licensed under the GNU Lesser General Public License (LGPL). The GPL allows users to copy, modify, and redistribute GNU, while the LGPL allows users to copy and modify Unix, but does not allow them to redistribute it.
+GNU Lesser General Public License (LGPL).
+https://www.checkmateq.com/blog/ansible-kubernetes/
+
+Ansible is a tool for IT automation that is used to deploy software, set up systems, configuration management, and handle more complex IT processes like rolling upgrades with no downtime or continuous deployments.
+
+In this blog, we use ansible to create a Kubernetes cluster on EC2 instances. We will create 1 control node and 2 worker nodes. We will install all the packages and dependencies using ansible playbooks.
+Prerequisites:
+
+    Host server running with Ansible installed.
+    ssh-key pair set up to connect to Kubernetes master and worker nodes.
+
+Step1: Setup inventory file
+
+    Add master and worker nodes in the hosts file.
+
+    Ping all nodes to make sure you can connect to them.
+
+Ansible script
+Ste2: Set up a user on nodes
+
+    Next, we will set up a non-root user with sudo permissions on the master and worker nodes so that we can manage the cluster safely.
+    Create an ansible playbook and copy the following code there.
+
+deb https://apt.kubernetes.io/ kubernetes-xenial main 
+
+https://packages.cloud.google.com/apt/dists
+
+kubernetes-lucid
+kubernetes-lucid-unstable
+kubernetes-precise
+kubernetes-precise-unstable
+kubernetes-squeeze
+kubernetes-squeeze-unstable
+kubernetes-stretch
+kubernetes-stretch-unstable
+kubernetes-trusty
+kubernetes-trusty-unstable
+kubernetes-wheezy
+kubernetes-wheezy-unstable
+kubernetes-xenial
+kubernetes-xenial-unstable
+kubernetes-yakkety
+kubernetes-yakkety-unstable
+liamfake-unstable
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial
+
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main
+Index of /apt/dists/kubernetes-xenial/main/
+binary-amd64
+binary-arm64
+binary-armhf
+binary-i386
+binary-ppc64el
+binary-s390x
+debian-installer
+source
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main/binary-i386
+
+Index of /apt/dists/kubernetes-xenial/main/binary-i386/
+Packages
+Packages.gz
+Release
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main/binary-amd64
+Index of /apt/dists/kubernetes-xenial/main/binary-amd64/
+Packages
+Packages.gz
+Release
+
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main/binary-amd64/Release
+Origin: kubernetes-xenial
+Label: kubernetes-xenial
+Suite: kubernetes-xenial
+Codename: kubernetes-xenial
+Date: Fri, 14 Apr 2023 17:20:08 UTC
+Acquire-By-Hash: yes
+Architecture: amd64
+Component: main
+Description: kubernetes-xenial
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main/binary-amd64/Packages.gz   download file
+
+https://packages.cloud.google.com/apt/dists/kubernetes-xenial/main/binary-amd64/Packages
+
+
+Package: cri-tools
+Version: 1.0.0-beta.1-00
+Installed-Size: 26067
+Maintainer: Kubernetes Authors <kubernetes-dev@googlegroups.com>
+Architecture: amd64
+Description: Container Runtime Interface Tools
+ Binaries that interact with the container runtime through the container runtime interface
+Homepage: https://kubernetes.io
+Filename: pool/cri-tools_1.0.0-beta.1-00_amd64_68880f674e9bf5959744d2cde7389a1a57b857e3fb769051ae0c506b19269ff0.deb
+Priority: optional
+SHA256: 68880f674e9bf5959744d2cde7389a1a57b857e3fb769051ae0c506b19269ff0
+Section: misc
+Size: 5069050
+
+Package: kubeadm
+Version: 1.6.5-00
+Installed-Size: 68263
+Maintainer: Kubernetes Authors <kubernetes-dev+release@googlegroups.com>
+Architecture: amd64
+Depends: kubelet (>= 1.6.0), kubectl (>= 1.6.0)
+Description: Kubernetes Cluster Bootstrapping Tool
+ The Kubernetes command line tool for bootstrapping a Kubernetes cluster.
+Homepage: https://kubernetes.io
+Filename: pool/kubeadm_1.6.5-00_amd64_dcdd54c3b0dd4dded1e8fa3e8e04b6427e97a0bd8495b2f7712f1da2a8210872.deb
+Priority: optional
+SHA256: dcdd54c3b0dd4dded1e8fa3e8e04b6427e97a0bd8495b2f7712f1da2a8210872
+Section: misc
+Size: 9235124
+
+Package: rkt
+Version: 1.29.0-1
+Installed-Size: 119585
+Maintainer: security@coreos.com
+Architecture: amd64
+Depends: adduser, dbus, libc6, systemd, iptables
+Suggests: ca-certificates
+Description: no description given
+Homepage: https://www.github.com/rkt/rkt
+Filename: pool/rkt_1.29.0-1_amd64_ea87d719359030f33fd48890875c934135c62eccda72c37d79ff604307b905b5.deb
+License: APLv2
+Priority: extra
+SHA256: ea87d719359030f33fd48890875c934135c62eccda72c37d79ff604307b905b5
+Section: utils
+Size: 107078660
+Vendor: CoreOS, Inc.
+
+
+Package: kubernetes-cni
+Version: 0.7.5-00
+Installed-Size: 49002
+Maintainer: Kubernetes Authors <kubernetes-dev@googlegroups.com>
+Architecture: amd64
+Description: Kubernetes CNI
+ The binaries required to provision container networking
+Homepage: https://kubernetes.io
+Filename: pool/kubernetes-cni_0.7.5-00_amd64_b38a324bb34f923d353203adf0e048f3b911f49fa32f1d82051a71ecfe2cd184.deb
+Priority: optional
+SHA256: b38a324bb34f923d353203adf0e048f3b911f49fa32f1d82051a71ecfe2cd184
+Section: misc
+Size: 6473084
+
+
+
+
+---
+- hosts: all
+  become: yes
+  tasks: 
+    - name: create the k8 - admin user 
+      user: 
+        name: k8
+        append: yes 
+        state: present
+        createhome: yes 
+        shell: /bin/bash 
+
+    - name: allow k8 user sudo permission 
+      lineinfile: 
+        dest: /etc/sudoers 
+        line: 'k8 ALL=(ALL:ALL) NOPASSWD: ALL'    
+        validate: 'visudo -cf %s'
+
+    - name: set authorized keys for the k8 user 
+      authorized_key: 
+        user: k8
+        key: "{{ item }}"
+      with_file: 
+        - ~/.ssh/id_rsa.pub 
+
+root@1f0a19afbe63:~/playbooks# ansible-playbook k8.yaml 
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.85]
+
+TASK [create the k8 - admin user] **********************************************
+[WARNING]: 'append' is set, but no 'groups' are specified. Use 'groups' for
+appending new groups.This will change to an error in Ansible 2.14.
+changed: [192.168.122.85]
+
+TASK [allow k8 user sudo permission] *******************************************
+changed: [192.168.122.85]
+
+TASK [set authorized keys for the k8 user] *************************************
+changed: [192.168.122.85] => (item=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9)
+
+PLAY RECAP *********************************************************************
+192.168.122.85             : ok=4    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+k8@lan:~$ ll
+total 24
+drwxr-xr-x 3 k8   k8   4096 May  8 11:00 ./
+drwxr-xr-x 4 root root 4096 May  8 11:00 ../
+-rw-r--r-- 1 k8   k8    220 Feb 25  2020 .bash_logout
+-rw-r--r-- 1 k8   k8   3771 Feb 25  2020 .bashrc
+-rw-r--r-- 1 k8   k8    807 Feb 25  2020 .profile
+drwx------ 2 k8   k8   4096 May  8 11:00 .ssh/
+k8@lan:~$ cd .ssh/
+k8@lan:~/.ssh$ ll
+total 12
+drwx------ 2 k8 k8 4096 May  8 11:00 ./
+drwxr-xr-x 3 k8 k8 4096 May  8 11:00 ../
+-rw------- 1 k8 k8  571 May  8 11:00 authorized_keys
+k8@lan:~/.ssh$ pwd 
+/home/k8/.ssh
+k8@lan:~/.ssh$ cat authorized_keys 
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9
+---
+- hosts: all
+  become: yes
+  become_user: root
+  gather_facts: yes
+
+  tasks:
+     - name: Create CRI-O config file
+       file:
+         path: "/etc/modules-load.d/crio.conf"
+         state: "touch"
+
+     - name: add modules in conf file
+       blockinfile:
+         path: "/etc/modules-load.d/crio.conf"
+         block: |
+            overlay
+            br_netfilter
+
+     - name: Enable sysctl params
+       file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+
+     - name: add configuration
+       blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+
+     - name: enable overlayFS & VxLan pod communication
+       shell: |
+               sudo modprobe overlay
+               sudo modprobe br_netfilter
+     - name: Reload parameters
+       command: sudo sysctl --system
+
+     - name: disable swap
+       shell: |
+               sudo swapoff -a
+               sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+     - name: enable cri-repo
+       environment:
+          OS: xUbuntu_20.04
+          VERSION: 1.23
+       shell: |
+                echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+                echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+
+                curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+                curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+     - name: Install cri-o and cri-o tools
+       shell: |
+               sudo apt-get update
+               sudo apt-get install cri-o cri-o-runc cri-tools -y
+               sudo systemctl daemon-reload
+               sudo systemctl enable crio --now
+
+     - name: Install dependencies
+       shell: |
+               sudo apt-get update
+               sudo apt-get install -y apt-transport-https curl
+               curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+     - name: Create kubernetes repo file
+       file:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         state: "touch"
+
+     - name: Add K8s Source
+       blockinfile:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         block: |
+               deb https://apt.kubernetes.io/ kubernetes-xenial main
+
+  
+     - name: install kubernetes 
+       shell: | 
+         sudo apt update 
+         sudo apt install -y kubelet  kubeadm kubectl 
+         sudo apt-mark hold kubelet kubeadm kubectl 
+
+PLAY [all] *********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.85]
+
+TASK [Create CRI-O config file] ************************************************
+changed: [192.168.122.85]
+
+TASK [add modules in conf file] ************************************************
+changed: [192.168.122.85]
+
+TASK [Enable sysctl params] ****************************************************
+changed: [192.168.122.85]
+
+TASK [add configuration] *******************************************************
+changed: [192.168.122.85]
+
+TASK [enable overlayFS & VxLan pod communication] ******************************
+changed: [192.168.122.85]
+
+TASK [Reload parameters] *******************************************************
+changed: [192.168.122.85]
+
+TASK [disable swap] ************************************************************
+changed: [192.168.122.85]
+
+TASK [enable cri-repo] *********************************************************
+changed: [192.168.122.85]
+
+TASK [Install cri-o and cri-o tools] *******************************************
+changed: [192.168.122.85]
+
+TASK [Install dependencies] ****************************************************
+changed: [192.168.122.85]
+
+TASK [Create kubernetes repo file] *********************************************
+changed: [192.168.122.85]
+
+TASK [Add K8s Source] **********************************************************
+changed: [192.168.122.85]
+
+TASK [install kubernetes] ******************************************************
+changed: [192.168.122.85]
+
+PLAY RECAP *********************************************************************
+192.168.122.85             : ok=14   changed=13   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+##################################################
+
