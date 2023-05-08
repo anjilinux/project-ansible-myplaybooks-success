@@ -1,5 +1,6 @@
-NOTE= +:  =  install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
-WORKERNODE SETUP WORKER NODE 
+NOTE= +:  =  install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00
+NOTE ={{  HOSTNAME CHANGED HOSTNAMECTL CHANDED SET HOSTNAME    }}
+KUBEADM INSTALL IN WORKER NODE  SETUP USING ANSIBLE PLAYBOOK 
 ---
 - hosts: node
   become: yes
@@ -105,7 +106,27 @@ WORKERNODE SETUP WORKER NODE
        shell: | 
          sudo apt update 
          sudo apt install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
-         sudo apt-mark hold kubelet kubeadm kubectl 
+         sudo apt-mark hold kubelet kubeadm kubectl
+         sudo systemctl stop firewalld
+         sudo  sudo swapoff -a 
+
+- hosts: node
+  become: yes
+  gather_facts: yes
+
+  tasks:
+   - name: Copy join command from Ansiblehost to the worker nodes.
+     become: yes
+     copy:
+       src: /tmp/kubernetes_join_command
+       dest: /tmp/kubernetes_join_command
+       mode: 0777
+
+   - name: Join the Worker nodes to the cluster.
+     become: yes
+     command: sh /tmp/kubernetes_join_command
+     register: joined_or_not   
+
 root@6eebfc856515:~/playbooks# ansible-playbook k8.yaml 
 
 PLAY [node] ********************************************************************
@@ -116,13 +137,13 @@ ok: [192.168.122.25]
 TASK [create the k8 - admin user] **********************************************
 [WARNING]: 'append' is set, but no 'groups' are specified. Use 'groups' for
 appending new groups.This will change to an error in Ansible 2.14.
-changed: [192.168.122.25]
+ok: [192.168.122.25]
 
 TASK [allow k8 user sudo permission] *******************************************
-changed: [192.168.122.25]
+ok: [192.168.122.25]
 
 TASK [set authorized keys for the k8 user] *************************************
-changed: [192.168.122.25] => (item=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9)
+ok: [192.168.122.25] => (item=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9)
 
 PLAY [node] ********************************************************************
 
@@ -133,13 +154,13 @@ TASK [Create CRI-O config file] ************************************************
 changed: [192.168.122.25]
 
 TASK [add modules in conf file] ************************************************
-changed: [192.168.122.25]
+ok: [192.168.122.25]
 
 TASK [Enable sysctl params] ****************************************************
 changed: [192.168.122.25]
 
 TASK [add configuration] *******************************************************
-changed: [192.168.122.25]
+ok: [192.168.122.25]
 
 TASK [enable overlayFS & VxLan pod communication] ******************************
 changed: [192.168.122.25]
@@ -163,10 +184,21 @@ TASK [Create kubernetes repo file] *********************************************
 changed: [192.168.122.25]
 
 TASK [Add K8s Source] **********************************************************
-changed: [192.168.122.25]
+ok: [192.168.122.25]
 
 TASK [install kubernetes] ******************************************************
 changed: [192.168.122.25]
 
+PLAY [node] ********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.25]
+
+TASK [Copy join command from Ansiblehost to the worker nodes.] *****************
+ok: [192.168.122.25]
+
+TASK [Join the Worker nodes to the cluster.] ***********************************
+changed: [192.168.122.25]
+
 PLAY RECAP *********************************************************************
-192.168.122.25             : ok=18   changed=16   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+192.168.122.25             : ok=21   changed=11   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
