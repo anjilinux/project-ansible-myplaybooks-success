@@ -246,9 +246,15 @@ drwxr-xr-x 3 k8 k8   4096 May  8 17:07 ./
 drwxr-xr-x 5 k8 k8   4096 May  8 17:06 ../
 drwxr-x--- 3 k8 k8   4096 May  8 17:07 cache/
 -rw-r--r-- 1 k8 root 5638 May  8 17:06 config
-k8@lan:~/.kube$ kubectl get nodes 
-NAME   STATUS   ROLES                  AGE     VERSION
-lan    Ready    control-plane,master   7m23s   v1.23.1
-k8@lan:~/.kube$ 
+k8@lan:~/.kube$  kubectl get nodes 
+NAME     STATUS   ROLES                  AGE    VERSION
+lan      Ready    control-plane,master   93m    v1.23.1
+worker   Ready    <none>                 8m6s   v1.23.1
+k8@lan:~/.kube$ kubectl get pod -o wide --show-labels
+NAME    READY   STATUS    RESTARTS   AGE   IP          NODE     NOMINATED NODE   READINESS GATES   LABELS
+nging   1/1     Running   0          43s   10.44.0.1   worker   <none>           <none>            run=nging
+redis   1/1     Running   0          21s   10.44.0.2   worker   <none>           <none>            run=redis
+ 
+
 
 
