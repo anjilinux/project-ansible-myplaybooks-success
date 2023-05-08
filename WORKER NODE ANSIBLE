@@ -1,0 +1,172 @@
+NOTE= +:  =  install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
+WORKERNODE SETUP WORKER NODE 
+---
+- hosts: node
+  become: yes
+  tasks: 
+    - name: create the k8 - admin user 
+      user: 
+        name: k8
+        append: yes 
+        state: present
+        createhome: yes 
+        shell: /bin/bash 
+
+    - name: allow k8 user sudo permission 
+      lineinfile: 
+        dest: /etc/sudoers 
+        line: 'k8 ALL=(ALL:ALL) NOPASSWD: ALL'    
+        validate: 'visudo -cf %s'
+
+    - name: set authorized keys for the k8 user 
+      authorized_key: 
+        user: k8
+        key: "{{ item }}"
+      with_file: 
+        - ~/.ssh/id_rsa.pub
+
+- hosts: node
+  become: yes
+  become_user: root
+  gather_facts: yes
+
+  tasks:
+     - name: Create CRI-O config file
+       file:
+         path: "/etc/modules-load.d/crio.conf"
+         state: "touch"
+
+     - name: add modules in conf file
+       blockinfile:
+         path: "/etc/modules-load.d/crio.conf"
+         block: |
+            overlay
+            br_netfilter
+
+     - name: Enable sysctl params
+       file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+
+     - name: add configuration
+       blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+
+     - name: enable overlayFS & VxLan pod communication
+       shell: |
+               sudo modprobe overlay
+               sudo modprobe br_netfilter
+     - name: Reload parameters
+       command: sudo sysctl --system
+
+     - name: disable swap
+       shell: |
+               sudo swapoff -a
+               sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+     - name: enable cri-repo
+       environment:
+          OS: xUbuntu_20.04
+          VERSION: 1.23
+       shell: |
+                echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+                echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+
+                curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+                curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+     - name: Install cri-o and cri-o tools
+       shell: |
+               sudo apt-get update
+               sudo apt-get install cri-o cri-o-runc cri-tools -y
+               sudo systemctl daemon-reload
+               sudo systemctl enable crio --now
+
+     - name: Install dependencies
+       shell: |
+               sudo apt-get update
+               sudo apt-get install -y apt-transport-https curl
+               curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+     - name: Create kubernetes repo file
+       file:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         state: "touch"
+
+     - name: Add K8s Source
+       blockinfile:
+         path: "/etc/apt/sources.list.d/kubernetes.list"
+         block: |
+               deb https://apt.kubernetes.io/ kubernetes-xenial main
+
+  
+     - name: install kubernetes 
+       shell: | 
+         sudo apt update 
+         sudo apt install -y kubelet=1.23.1-00  kubeadm=1.23.1-00 kubectl=1.23.1-00 
+         sudo apt-mark hold kubelet kubeadm kubectl 
+root@6eebfc856515:~/playbooks# ansible-playbook k8.yaml 
+
+PLAY [node] ********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.25]
+
+TASK [create the k8 - admin user] **********************************************
+[WARNING]: 'append' is set, but no 'groups' are specified. Use 'groups' for
+appending new groups.This will change to an error in Ansible 2.14.
+changed: [192.168.122.25]
+
+TASK [allow k8 user sudo permission] *******************************************
+changed: [192.168.122.25]
+
+TASK [set authorized keys for the k8 user] *************************************
+changed: [192.168.122.25] => (item=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDWe/EG7Elmj8Y95DV3aVoRuRhVccX97XYTf6eQO+/lSkIxFdN9dMnm1JgsiYWt+9HDFIzebVq1V5/XyQ2r7HYxgoLXnT19730oK7zImQVAcboVYKCAiLzjfF1g7/Keaq7ixgdYvXyV1VaRk2e10ZR9U3BgFx0616Y5SFy6mDtUNsEtVWzdInrbevPDCAcr0E8c1Gw6bMf61wmeb3xen9dxlarFlkD4FrK0ujHiswd9ZRtUivp5OCa1MDxchgbDDKTRVj6WSGyY/dalbsE75MZtiNoEmIZ9c3RqIWIwZOFDxsMSqVGMCtWMwNEU7v+78+2xQLC3nb0ZIXPx0esY17ONW9f3tpumNQjUPnNNsnb/UZ0RXKJ1tFxYZylrxdyvQkmNEZRYuyD/mQTyS0OJQ7+xxNUR+f0bFg8tnw7vacrz3UQ0b9q1lWLtEM2CBC6Y0zcr29kKCLAIFItZw4swDQCq3GQgMfVxGacjaTJSgvbI6zziCO30u9DB2vwW0BK4A+k= root@b60c19fd0ec9)
+
+PLAY [node] ********************************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [192.168.122.25]
+
+TASK [Create CRI-O config file] ************************************************
+changed: [192.168.122.25]
+
+TASK [add modules in conf file] ************************************************
+changed: [192.168.122.25]
+
+TASK [Enable sysctl params] ****************************************************
+changed: [192.168.122.25]
+
+TASK [add configuration] *******************************************************
+changed: [192.168.122.25]
+
+TASK [enable overlayFS & VxLan pod communication] ******************************
+changed: [192.168.122.25]
+
+TASK [Reload parameters] *******************************************************
+changed: [192.168.122.25]
+
+TASK [disable swap] ************************************************************
+changed: [192.168.122.25]
+
+TASK [enable cri-repo] *********************************************************
+changed: [192.168.122.25]
+
+TASK [Install cri-o and cri-o tools] *******************************************
+changed: [192.168.122.25]
+
+TASK [Install dependencies] ****************************************************
+changed: [192.168.122.25]
+
+TASK [Create kubernetes repo file] *********************************************
+changed: [192.168.122.25]
+
+TASK [Add K8s Source] **********************************************************
+changed: [192.168.122.25]
+
+TASK [install kubernetes] ******************************************************
+changed: [192.168.122.25]
+
+PLAY RECAP *********************************************************************
+192.168.122.25             : ok=18   changed=16   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
