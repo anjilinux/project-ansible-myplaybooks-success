@@ -1,0 +1,208 @@
+https://github.com/anjilinux/project-ansible-myplaybooks-success/blob/main/MASTER%2BWORKERNODES%2BJOINTOKEN
+https://www.checkmateq.com/blog/ansible-kubernetes/
+https://computingforgeeks.com/deploy-kubernetes-cluster-on-ubuntu-with-kubeadm/#comments
+https://github.com/anjilinux/kubernetes-install-in-ubuntu-20-kubeadm-install-in-ubuntu-20-Kubernetes-cluster-on-Ubuntu-20.04-/blob/main/CRIO-O%20WITH%20K8%20CLUSTER
+
+root@jira:~/playbook# cat k8.yaml 
+---
+- hosts: all
+  become: yes 
+  become_user: root
+  gather_facts: yes
+  tasks: 
+    - name: create sudo user 
+      user: 
+        name: k8 
+        state: present
+        createhome: yes 
+        shell: /bin/bash
+    - name: allow k8 user sudo permissions 
+      lineinfile:
+        dest: /etc/sudoers
+        line: 'k8  ALL=(ALL:ALL)  NOPASSWD: ALL '    
+        validate: 'visudo  -cf %s' 
+
+    - name: set aurthorized keys for k8 user 
+      authorized_key: 
+         user: k8
+         key: "{{ item }}"  
+      with_file:
+       - ~/.ssh/id_rsa.pub  
+
+    - name: update and upgrade full  and Kubernetes apt repository
+      shell: | 
+           sudo apt update
+           sudo apt -y upgrade           
+           sudo apt -y install curl apt-transport-https
+           sudo curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+           sudo echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+    - name: install kubeadm and kubelet kubectl - latest new version 
+      shell: | 
+        sudo apt update
+        sudo apt -y install vim git curl wget kubelet kubeadm kubectl
+        sudo apt-mark hold kubelet kubeadm kubectl 
+    - name: disable swap 
+      shell: | 
+          sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+          sudo swapoff -a
+          sudo mount -a
+          free -h
+          sudo systemctl stop firewalld
+
+    - name: Enable kernel modules
+      shell: | 
+          sudo modprobe overlay
+          sudo modprobe br_netfilter
+
+    - name: to create sysctl file 
+      file: 
+        path: "/etc/sysctl.d/kubernetes.conf"  
+        state: "touch"
+
+    - name: add some settings to sysctl 
+      blockinfile: 
+         path: "/etc/sysctl.d/kubernetes.conf"
+         block: | 
+              net.bridge.bridge-nf-call-ip6tables = 1
+              net.bridge.bridge-nf-call-iptables = 1
+              net.ipv4.ip_forward = 1
+
+    - name: reload sysctl without restart 
+      command: sudo sysctl  --system 
+#  all this  steps  are common  congurations like  container runtime interface =docler , CRI-O , containerD  
+
+    - name: Enable kernel modules
+      shell: | 
+          sudo modprobe overlay
+          sudo modprobe br_netfilter
+
+    - name: Enable sysctl params
+      file:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         state: "touch"
+
+    - name: add configuration
+      blockinfile:
+         path: "/etc/sysctl.d/99-kubernetes-cri.conf"
+         block: |
+                net.bridge.bridge-nf-call-iptables = 1
+                net.ipv4.ip_forward = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+
+    - name: reload sysctl  without restart                       
+      command: sudo sysctl --system      
+
+    -  name: enable cri-repo
+       environment:
+          OS: xUbuntu_20.04
+          VERSION: 1.23
+       shell: |
+                echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+                echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+
+                curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+                curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+     
+    -  name: Install cri-o and cri-o tools
+       shell: |
+               sudo apt-get update -y 
+               sudo apt install cri-o-runc  -y 
+               sudo apt-get install cri-o  -y
+               sudo apt-get install cri-tools -y
+               sudo systemctl daemon-reload
+               sudo systemctl enable crio --now
+
+
+
+
+    - name: crio start and enable service 
+      shell: | 
+            sudo systemctl daemon-reload
+            sudo systemctl restart crio
+            sudo systemctl enable crio
+            sudo systemctl status crio   
+
+    - name:  to check  b_netfilter modules is avaiable or not 
+      shell: sudo lsmod | grep br_netfilter
+
+    - name: enable kubelet services 
+      command:  sudo systemctl enable kubelet
+########################################################################## on master node       
+- hosts: master
+  become: yes 
+  become_user: root
+  tasks: 
+
+    - name: cluster database ETCD  and api server pulling container image
+      command: sudo kubeadm config images pull --cri-socket unix:///var/run/crio/crio.sock
+
+    - name: create a  cluster 
+      shell: sudo kubeadm init  --pod-network-cidr=192.168.0.0/16   --cri-socket=/var/run/crio/crio.sock  --ignore-preflight-errors Swap >> cluster_initialized.txt 
+      args: 
+        chdir: $HOME 
+        creates: cluster_initialized.txt 
+    - name: create .kube directory 
+      become: yes 
+      become_user: k8 
+      file: 
+         path: /home/k8/.kube
+         state: directory 
+         mode: 0755 
+
+    - name: copy admin.conf 
+      copy: 
+        remote_src: yes 
+        src: /etc/kubernetes/admin.conf 
+        dest: /home/k8/.kube/config
+        owner: k8 
+
+    - name: install podnetwork weaveworks 
+      become: yes 
+      become_user: k8 
+      shell:    kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+      args: 
+        chdir: $HOME   
+  
+    - name: GET JOIN TOKEN 
+      become: yes 
+      become_user: k8 
+      shell: sudo kubeadm token create  --print-join-command 
+      register: kubernetes_join_command 
+
+    - name: copy join command to local file 
+      become: yes 
+      local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}"  dest="/tmp/kubernetes_join_command" mode=0777
+######################################  in nodes  
+- hosts: node
+  become: yes
+  gather_facts: yes
+
+  tasks:
+   - name: Copy join command from Ansiblehost to the worker nodes.
+     become: yes
+     copy:
+       src: /tmp/kubernetes_join_command
+       dest: /tmp/kubernetes_join_command
+       mode: 0777
+
+   - name: Join the Worker nodes to the cluster.
+     become: yes
+     command: sh /tmp/kubernetes_join_command
+     register: joined_or_not   
+############################## test nodes pods 
+- hosts: master
+  become: yes 
+  become_user: k8
+  gather_facts: yes 
+  tasks: 
+    - name: test pod and nodess 
+      command:  "{{ item  }}"
+      with_items:
+        - "kubectl get all"
+        - "kubectl get nodes "
+
+
+
+
+
